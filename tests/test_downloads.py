@@ -247,6 +247,31 @@ class TestDownloads:
                 downloader.chunk_downloaded(b'45')
                 downloader.finish()
 
+    def test_download_with_content_encoding_does_not_report_incomplete(self, mock_env, httpbin_both):
+        """Regression test for https://github.com/httpie/cli/issues/1642.
+
+        When Content-Encoding (e.g. gzip) is present, the `requests` library
+        transparently decodes the body, so the bytes written to disk may exceed
+        the compressed Content-Length.  The downloader must not report the
+        download as incomplete in that case.
+        """
+        with open(os.devnull, 'w') as devnull:
+            downloader = Downloader(mock_env, output_file=devnull)
+            downloader.start(
+                final_response=Response(
+                    url=httpbin_both.url + '/',
+                    headers={
+                        'Content-Length': 5,          # compressed size
+                        'Content-Encoding': 'gzip',
+                    }
+                ),
+                initial_url='/'
+            )
+            # Simulate receiving more decompressed bytes than Content-Length.
+            downloader.chunk_downloaded(b'12345678')  # 8 bytes > 5 bytes
+            downloader.finish()
+            assert not downloader.interrupted
+
     def test_download_with_redirect_original_url_used_for_filename(self, httpbin):
         # Redirect from `/redirect/1` to `/get`.
         expected_filename = '1.json'
