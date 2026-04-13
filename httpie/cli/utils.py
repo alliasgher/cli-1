@@ -1,7 +1,13 @@
 import argparse
+import sys
 from typing import Any, Callable, Generic, Iterator, Iterable, Optional, TypeVar
 
 T = TypeVar('T')
+
+# Python 3.14 added an eager _check_help() call in add_argument() that
+# validates the help string immediately (see cpython#65865). This causes
+# LazyChoices.help to invoke the getter at argument-registration time.
+_ARGPARSE_CHECKS_HELP_EAGERLY = sys.version_info >= (3, 14)
 
 
 class Manual(argparse.Action):
@@ -54,7 +60,7 @@ class LazyChoices(argparse.Action, Generic[T]):
         return self._obj
 
     @property
-    def help(self) -> str:
+    def help(self) -> Optional[str]:
         if self._help is None and self.help_formatter is not None:
             self._help = self.help_formatter(
                 self.load(),

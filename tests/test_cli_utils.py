@@ -1,7 +1,8 @@
+import sys
 import pytest
 from argparse import ArgumentParser
 from unittest.mock import Mock
-from httpie.cli.utils import LazyChoices
+from httpie.cli.utils import LazyChoices, _ARGPARSE_CHECKS_HELP_EAGERLY
 
 
 def test_lazy_choices():
@@ -69,10 +70,19 @@ def test_lazy_choices_help():
         cache=False  # for test purposes
     )
 
-    # Parser initialization doesn't call it.
-    getter.assert_not_called()
+    # Python 3.14 added an eager _check_help() call in add_argument() that
+    # validates the help string immediately (cpython#65865).  On 3.14+, the
+    # getter will therefore be invoked once at registration time.
+    if _ARGPARSE_CHECKS_HELP_EAGERLY:
+        getter.assert_called_once()
+        getter.reset_mock()
+        help_formatter.assert_called_once()
+        help_formatter.reset_mock()
+    else:
+        # Parser initialization must not call getter or help_formatter.
+        getter.assert_not_called()
 
-    # If we don't use `--help`, we don't use it.
+    # If we don't use `--help`, we don't use them beyond registration.
     parser.parse_args([])
     getter.assert_not_called()
     help_formatter.assert_not_called()
@@ -80,7 +90,10 @@ def test_lazy_choices_help():
     parser.parse_args(['--lazy-option', 'b'])
     help_formatter.assert_not_called()
 
-    # If we use --help, then we call it with styles
+    # If we use --help, then we call it with styles.
+    # On Python 3.14+, help_formatter was already called during registration
+    # and the cached result is reused — it should not be called again.
     with pytest.raises(SystemExit):
         parser.parse_args(['--help'])
-    help_formatter.assert_called_once_with(['a', 'b', 'c'], isolation_mode=False)
+    if not _ARGPARSE_CHECKS_HELP_EAGERLY:
+        help_formatter.assert_called_once_with(['a', 'b', 'c'], isolation_mode=False)
